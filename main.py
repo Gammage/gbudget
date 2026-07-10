@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import shutil
 from datetime import datetime
 from config import load_config, save_config, init_config
-from database import init_db, add_transaction, get_transactions, update_transaction, delete_transaction, mark_cleared, add_recurring, get_recurring, delete_recurring, transaction_exists_in_month, get_connection
+from database import init_db, add_transaction, get_transactions, update_transaction, delete_transaction, mark_cleared, add_recurring, get_recurring, delete_recurring, transaction_exists_in_month, get_connection, DB_PATH, add_debt, get_debts, get_debt_by_id, delete_debt, add_debt_payment, get_debt_payments, calculate_debt_balance, update_debt_status
 from exporters import export_statement
 
 
@@ -80,6 +81,29 @@ def main():
 
     recurring_del = recurring_sub.add_parser("delete", help="Delete a recurring template")
     recurring_del.add_argument("id", type=int)
+
+    # reset
+    reset_parser = subparsers.add_parser("reset", help="Delete all data and reset the database")
+
+    # debt
+    debt_parser = subparsers.add_parser("debt", help="Manage debts and loans")
+    debt_sub = debt_parser.add_subparsers(dest="debt_cmd", required=True)
+
+    debt_add = debt_sub.add_parser("add", help="Add a new debt or loan")
+    debt_add.add_argument("name", type=str, help="Name of the debt (e.g. 'Student Loan')")
+    debt_add.add_argument("amount", type=float, help="Initial amount owed")
+    debt_add.add_argument("--rate", type=float, default=0, help="Annual interest rate (%%)")
+    debt_add.add_argument("-d", "--date", default=datetime.today().strftime("%Y-%m-%d"), help="Start date (YYYY-MM-DD)")
+
+    debt_list = debt_sub.add_parser("list", help="Show all debts with current balances")
+
+    debt_pay = debt_sub.add_parser("pay", help="Record a payment against a debt")
+    debt_pay.add_argument("id", type=int, help="Debt ID")
+    debt_pay.add_argument("amount", type=float, help="Payment amount")
+    debt_pay.add_argument("-d", "--date", default=datetime.today().strftime("%Y-%m-%d"), help="Payment date (YYYY-MM-DD)")
+
+    debt_delete = debt_sub.add_parser("delete", help="Delete a debt and its payments")
+    debt_delete.add_argument("id", type=int, help="Debt ID")
 
     args = parser.parse_args()
 
@@ -212,6 +236,85 @@ def main():
         elif args.recurring_cmd == "delete":
             delete_recurring(args.id)
             print(f"Recurring #{args.id} deleted.")
+
+    elif args.command == "reset":
+        print("WARNING: This will permanently delete all transactions and recurring templates.")
+        print("Config settings (vault path) will be preserved.")
+        try:
+            response = input("Continue? [Y/N] ").strip()
+        except EOFError:
+            response = "N"
+        if response != "Y":
+            print("Aborted.")
+            return
+
+        if os.path.exists(DB_PATH):
+            os.remove(DB_PATH)
+        init_db()
+        print("Transactions and recurring templates deleted.")
+
+        vault = config.get("vault_path", "")
+        if vault and config.get("statements_enabled"):
+            try:
+                response = input("Delete vault statement files too? [Y/N] ").strip()
+            except EOFError:
+                response = "N"
+            if response == "Y":
+                money_dir = os.path.join(os.path.expanduser(vault), "files", "money")
+                if os.path.exists(money_dir):
+                    shutil.rmtree(money_dir)
+                    print("Statement files deleted.")
+                config["statements_enabled"] = False
+
+        config["last_statement_month"] = ""
+        save_config(config)
+        print("Done.")
+
+    elif args.command == "debt":
+        if args.debt_cmd == "add":
+            did = add_debt(args.name, args.amount, args.rate, args.date)
+            print(f"Debt #{did} '{args.name}' added.")
+        elif args.debt_cmd == "list":
+            debts = get_debts()
+            if not debts:
+                print("No debts recorded.")
+                return
+            print(f"{'ID':>3}  {'Name':<20}  {'Balance':>12}  {'Rate':>6}  {'Status':<8}")
+            print("-" * 60)
+            total_debt = 0
+            for d in debts:
+                balance = calculate_debt_balance(d)
+                total_debt += balance
+                print(f"{d.id:>3}  {d.name:<20}  £{balance:>10.2f}  {d.annual_rate:>5.1f}%  {d.status:<8}")
+            print("-" * 60)
+            print(f"{'Total debt:':<30} £{total_debt:>10.2f}")
+        elif args.debt_cmd == "pay":
+            debt = get_debt_by_id(args.id)
+            if not debt:
+                print(f"Debt #{args.id} not found.")
+                return
+            if debt.status == "paid_off":
+                print(f"Debt '{debt.name}' is already paid off.")
+                return
+            try:
+                fee_input = input(f"Enter fee for payment to \"{debt.name}\" (0 if none): ").strip()
+                fee = float(fee_input) if fee_input else 0.0
+            except (EOFError, ValueError):
+                fee = 0.0
+            pid = add_debt_payment(args.id, args.amount, fee, args.date)
+            new_balance = calculate_debt_balance(debt)
+            if new_balance <= 0:
+                update_debt_status(args.id, "paid_off")
+                print(f"Payment #{pid} recorded. '{debt.name}' is now paid off!")
+            else:
+                print(f"Payment #{pid} recorded. Balance: £{new_balance:.2f}")
+        elif args.debt_cmd == "delete":
+            debt = get_debt_by_id(args.id)
+            if not debt:
+                print(f"Debt #{args.id} not found.")
+                return
+            delete_debt(args.id)
+            print(f"Debt '{debt.name}' deleted.")
 
 
 def auto_export(config, month=None):

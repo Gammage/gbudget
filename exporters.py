@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timedelta
-from database import get_connection
+from database import get_connection, get_debts, get_debt_payments, calculate_debt_balance
 
 
 def export_statement(config, month):
@@ -137,6 +137,36 @@ def export_statement(config, month):
             date_label = d.strftime("%b %-d")
             sign = "+" if t["type"] == "income" else "-"
             lines.append(f"| {date_label} | {t['description']} | {t['category']} | {sign}£{t['amount']:.2f} |")
+        lines.append("")
+
+    # Debts & Loans section
+    debts = get_debts(status="active")
+    if debts:
+        lines.append("## Debts & Loans")
+        lines.append("")
+        lines.append("| Debt | Balance | Interest | Payments | New Balance |")
+        lines.append("|---|---|---|---|---|")
+        total_debt = 0
+        for d in debts:
+            balance = calculate_debt_balance(d)
+            # Calculate interest accrued this month
+            start = datetime.strptime(d.start_date, "%Y-%m-%d")
+            month_dt = datetime.strptime(month + "-01", "%Y-%m-%d")
+            months_elapsed = (month_dt.year - start.year) * 12 + (month_dt.month - start.month)
+            monthly_rate = d.annual_rate / 12 / 100
+            if months_elapsed > 0:
+                interest_this_month = d.initial_amount * monthly_rate
+            else:
+                interest_this_month = 0
+            # Get payments this month
+            payments = get_debt_payments(debt_id=d.id, month=month)
+            payments_total = sum(p["amount"] for p in payments)
+            new_balance = balance - payments_total + interest_this_month
+            new_balance = max(new_balance, 0.0)
+            total_debt += new_balance
+            lines.append(f"| {d.name} | £{balance:.2f} | +£{interest_this_month:.2f} | -£{payments_total:.2f} | £{new_balance:.2f} |")
+        lines.append("")
+        lines.append(f"**Total debt:** £{total_debt:.2f}")
         lines.append("")
 
     conn.close()

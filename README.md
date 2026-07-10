@@ -50,6 +50,7 @@ gbudget recurring add 12 "Netflix" -c Subscriptions -d 15
 gbudget recurring add 500 "Rent" -c Housing -d 1
 gbudget recurring list
 gbudget recurring delete 1
+gbudget reset
 ```
 
 ## Commands
@@ -108,6 +109,20 @@ gbudget recurring delete 1
   - `recurring add 12 "Netflix" -c Subscriptions -d 15` — create a template (use `--income` for income)
   - `recurring list` — show all templates with total monthly outgoings
   - `recurring delete 1` — remove a template
+
+**`reset`**
+  Permanently delete all transactions and recurring templates. Config settings are preserved.
+  If vault statements are enabled, you'll be prompted to delete those files too.
+  Example:
+  ```
+  $ gbudget reset
+  WARNING: This will permanently delete all transactions and recurring templates.
+  Config settings (vault path) will be preserved.
+  Continue? [Y/N] Y
+  Transactions and recurring templates deleted.
+  Delete vault statement files too? [Y/N] Y
+  Statement files deleted.
+  ```
 
 ## Workflow
 

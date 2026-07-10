@@ -1,7 +1,7 @@
 import sqlite3
 import os
 import sys
-from models import Transaction
+from models import Transaction, Debt
 
 if sys.platform == "win32":
     DB_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "gbudget")
@@ -41,6 +41,28 @@ def init_db():
         day INTEGER NOT NULL CHECK(day BETWEEN 1 AND 28),
         last_generated TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS debts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        initial_amount REAL NOT NULL CHECK(initial_amount > 0),
+        annual_rate REAL NOT NULL DEFAULT 0 CHECK(annual_rate >= 0),
+        start_date TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paid_off')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS debt_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        debt_id INTEGER NOT NULL,
+        amount REAL NOT NULL CHECK(amount > 0),
+        fee REAL NOT NULL DEFAULT 0 CHECK(fee >= 0),
+        date TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE CASCADE
         )
     """)
     conn.commit()
@@ -146,3 +168,110 @@ def transaction_exists_in_month(amount, description, month):
     ).fetchone()
     conn.close()
     return row[0] > 0
+
+
+# --- Debt functions ---
+
+def add_debt(name, initial_amount, annual_rate, start_date):
+    """Create a new debt, return the new ID."""
+    conn = get_connection()
+    cursor = conn.execute(
+        "INSERT INTO debts (name, initial_amount, annual_rate, start_date) VALUES (?, ?, ?, ?)",
+        (name, initial_amount, annual_rate, start_date)
+    )
+    conn.commit()
+    new_id = cursor.lastrowid
+    conn.close()
+    return new_id
+
+
+def get_debts(status=None):
+    """Return list of Debt objects, optionally filtered by status."""
+    conn = get_connection()
+    if status:
+        rows = conn.execute("SELECT * FROM debts WHERE status = ? ORDER BY created_at", (status,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM debts ORDER BY created_at").fetchall()
+    conn.close()
+    return [Debt(**dict(row)) for row in rows]
+
+
+def get_debt_by_id(debt_id):
+    """Return a single Debt by ID."""
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM debts WHERE id = ?", (debt_id,)).fetchone()
+    conn.close()
+    if row:
+        return Debt(**dict(row))
+    return None
+
+
+def update_debt_status(debt_id, status):
+    """Update a debt's status (active/paid_off)."""
+    conn = get_connection()
+    conn.execute("UPDATE debts SET status = ? WHERE id = ?", (status, debt_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_debt(debt_id):
+    """Delete a debt and its payments."""
+    conn = get_connection()
+    conn.execute("DELETE FROM debt_payments WHERE debt_id = ?", (debt_id,))
+    conn.execute("DELETE FROM debts WHERE id = ?", (debt_id,))
+    conn.commit()
+    conn.close()
+
+
+def add_debt_payment(debt_id, amount, fee, date):
+    """Record a payment against a debt, return the new ID."""
+    conn = get_connection()
+    cursor = conn.execute(
+        "INSERT INTO debt_payments (debt_id, amount, fee, date) VALUES (?, ?, ?, ?)",
+        (debt_id, amount, fee, date)
+    )
+    conn.commit()
+    new_id = cursor.lastrowid
+    conn.close()
+    return new_id
+
+
+def get_debt_payments(debt_id=None, month=None):
+    """Return debt payments, optionally filtered by debt_id and/or month."""
+    conn = get_connection()
+    query = "SELECT * FROM debt_payments WHERE 1=1"
+    params = []
+    if debt_id:
+        query += " AND debt_id = ?"
+        params.append(debt_id)
+    if month:
+        query += " AND strftime('%Y-%m', date) = ?"
+        params.append(month)
+    query += " ORDER BY date DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_total_payments(debt_id):
+    """Return total amount paid towards a debt."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM debt_payments WHERE debt_id = ?",
+        (debt_id,)
+    ).fetchone()
+    conn.close()
+    return row[0]
+
+
+def calculate_debt_balance(debt):
+    """Calculate current balance: initial + accrued interest - total payments."""
+    from datetime import datetime
+    start = datetime.strptime(debt.start_date, "%Y-%m-%d")
+    now = datetime.today()
+    months_elapsed = (now.year - start.year) * 12 + (now.month - start.month)
+    monthly_rate = debt.annual_rate / 12 / 100
+    accrued_interest = debt.initial_amount * monthly_rate * months_elapsed
+    total_payments = get_total_payments(debt.id)
+    balance = debt.initial_amount + accrued_interest - total_payments
+    return max(balance, 0.0)

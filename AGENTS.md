@@ -87,8 +87,11 @@ CREATE TABLE recurring (
 | `recurring add AMT DESC -c CAT -d DAY [--income]` | Create a recurring template |
 | `recurring list` | Show all recurring templates with total |
 | `recurring delete ID` | Delete a recurring template |
+| `reset` | Delete all transactions + recurring templates. If vault statements are enabled, prompts to delete statement files too. Config preserved. |
 
 ### Auto-prompt behavior
+
+#### Monthly prompts
 
 On any command invocation, if the current month differs from `last_statement_month` (in config), prompts fire:
 
@@ -100,6 +103,17 @@ On any command invocation, if the current month differs from `last_statement_mon
    Skips any that already exist in the current month (same amount + description).
 
 Updates `last_statement_month` in config after both prompts.
+
+#### Reset prompts
+
+On `gbudget reset`:
+1. > Continue? [Y/N]
+   Confirmation before deleting all data. Abort on any response other than `Y`.
+
+2. > Delete vault statement files too? [Y/N]
+   Only shown when `vault_path` is set and `statements_enabled` is `true`. If yes → deletes `files/money/` directory and disables statements.
+
+Config (`vault_path`, `statement_day`) is always preserved. `last_statement_month` is cleared to `""`.
 
 ---
 
