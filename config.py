@@ -11,7 +11,8 @@ CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 DEFAULT_CONFIG = {
     "vault_path": "",
     "statement_day": 1,
-    "last_statement_month": ""
+    "last_statement_month": "",
+    "statements_enabled": False
 }
 
 
@@ -28,11 +29,7 @@ def save_config(config):
         json.dump(config, f, indent=2)
 
 
-def init_config(vault_path):
-    config = {
-        "vault_path": vault_path,
-        "statement_day": 1,
-        "last_statement_month": "",
-    }
+def init_config():
+    config = DEFAULT_CONFIG.copy()
     save_config(config)
     return config

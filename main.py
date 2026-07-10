@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 from datetime import datetime
 from config import load_config, save_config, init_config
 from database import init_db, add_transaction, get_transactions, update_transaction, delete_transaction, mark_cleared, add_recurring, get_recurring, delete_recurring, transaction_exists_in_month, get_connection
@@ -15,11 +16,14 @@ def main():
 
     # init
     init_parser = subparsers.add_parser("init", help="First-time setup")
-    init_parser.add_argument("--vault", required=True)
 
     # config
     config_parser = subparsers.add_parser("config", help="View or update settings")
     config_parser.add_argument("--vault")
+
+    # setup-statements
+    setup_parser = subparsers.add_parser("setup-statements", help="Enable monthly markdown statements in vault")
+    setup_parser.add_argument("--vault", required=True)
 
     # add
     add_parser = subparsers.add_parser("add", help="Add a transaction")
@@ -80,9 +84,9 @@ def main():
     args = parser.parse_args()
 
     if args.command == "init":
-        init_config(args.vault)
+        init_config()
         init_db()
-        print(f"gbudget initialised. Vault: {args.vault}")
+        print("gbudget initialised.")
 
     elif args.command == "config":
         if args.vault:
@@ -170,6 +174,15 @@ def main():
         auto_export(config)
         print(f"Transactions marked as cleared: {args.ids}")
 
+    elif args.command == "setup-statements":
+        vault = os.path.expanduser(args.vault)
+        output_dir = os.path.join(vault, "files", "money")
+        os.makedirs(output_dir, exist_ok=True)
+        config["statements_enabled"] = True
+        config["vault_path"] = vault
+        save_config(config)
+        print(f"Statements enabled. Writing to {output_dir}")
+
     elif args.command == "export":
         month = args.month or datetime.today().strftime("%Y-%m")
         path = export_statement(config, month)
@@ -202,7 +215,7 @@ def main():
 
 
 def auto_export(config, month=None):
-    if not config.get("vault_path"):
+    if not config.get("vault_path") or not config.get("statements_enabled"):
         return
     if month is None:
         month = datetime.today().strftime("%Y-%m")
@@ -216,20 +229,21 @@ def check_statement_prompt(config):
     today = datetime.today()
     current_month = today.strftime("%Y-%m")
     if current_month != config.get("last_statement_month", ""):
-        last_month = today.replace(day=1)
-        if last_month.month == 1:
-            last_month = last_month.replace(year=last_month.year - 1, month=12)
-        else:
-            last_month = last_month.replace(month=last_month.month - 1)
-        label = last_month.strftime("%B %Y")
-        try:
-            response = input(f"Generate statement for {label}? [y/N] ").strip().lower()
-        except EOFError:
-            response = "n"
-        if response == "y":
-            month = last_month.strftime("%Y-%m")
-            export_statement(config, month)
-            print(f"Statement for {label} generated.")
+        if config.get("statements_enabled"):
+            last_month = today.replace(day=1)
+            if last_month.month == 1:
+                last_month = last_month.replace(year=last_month.year - 1, month=12)
+            else:
+                last_month = last_month.replace(month=last_month.month - 1)
+            label = last_month.strftime("%B %Y")
+            try:
+                response = input(f"Generate statement for {label}? [y/N] ").strip().lower()
+            except EOFError:
+                response = "n"
+            if response == "y":
+                month = last_month.strftime("%Y-%m")
+                export_statement(config, month)
+                print(f"Statement for {label} generated.")
         config["last_statement_month"] = current_month
         save_config(config)
 

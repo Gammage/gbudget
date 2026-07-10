@@ -43,6 +43,8 @@ def export_statement(config, month):
 
     total_income = sum(t["amount"] for t in txns if t["type"] == "income")
     total_expenses = sum(t["amount"] for t in txns if t["type"] == "expense")
+    cleared_income = sum(t["amount"] for t in cleared_txns if t["type"] == "income")
+    cleared_expenses = sum(t["amount"] for t in cleared_txns if t["type"] == "expense")
     net_change = total_income - total_expenses
     closing_balance = opening_balance + net_change
 
@@ -75,6 +77,24 @@ def export_statement(config, month):
     lines.append(f"| **Saved this month** | **£{net_change:.2f}** |")
     lines.append("")
 
+    # recurring templates
+    recurring_rows = conn.execute("SELECT * FROM recurring ORDER BY day").fetchall()
+    if recurring_rows:
+        lines.append("## Recurring Payments")
+        lines.append("")
+        lines.append("| Description | Category | Amount | Due Day |")
+        lines.append("|---|---|---|---|")
+        recurring_total = 0
+        for r in recurring_rows:
+            sign = "+" if r["type"] == "income" else "-"
+            amt = r["amount"]
+            lines.append(f"| {r['description']} | {r['category']} | {sign}£{amt:.2f} | {r['day']} |")
+            if r["type"] == "expense":
+                recurring_total += amt
+        lines.append("")
+        lines.append(f"**Total outgoings:** -£{recurring_total:.2f}")
+        lines.append("")
+
     if cleared_txns:
         lines.append("## Transactions (Cleared)")
         lines.append("")
@@ -85,6 +105,9 @@ def export_statement(config, month):
             date_label = d.strftime("%b %-d")
             sign = "+" if t["type"] == "income" else "-"
             lines.append(f"| {date_label} | {t['description']} | {t['category']} | {sign}£{t['amount']:.2f} |")
+        cleared_net = cleared_income - cleared_expenses
+        lines.append("")
+        lines.append(f"**Total:** {'£' + f'{cleared_net:.2f}' if cleared_net >= 0 else '-£' + f'{abs(cleared_net):.2f}'}")
         lines.append("")
 
     # expenses by category
@@ -102,6 +125,7 @@ def export_statement(config, month):
             pct = (total / total_expenses * 100) if total_expenses else 0
             lines.append(f"| {cat} | £{total:.2f} | {pct:.0f}% |")
         lines.append("")
+        lines.append("")
 
     if pending_txns:
         lines.append("## Pending Transactions")
@@ -117,7 +141,7 @@ def export_statement(config, month):
 
     conn.close()
 
-    content = "\n".join(lines)
+    content = "\n".join(lines) + "\n"
     filename = f"{month}-statement.md"
     filepath = os.path.join(output_dir, filename)
     with open(filepath, "w") as f:

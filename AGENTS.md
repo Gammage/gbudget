@@ -8,7 +8,7 @@ Python 3.13, stdlib only (`argparse`, `sqlite3`, `datetime`).
 
 ```
 CLI (main.py) → database.py (SQLite) → ~/.local/share/gbudget/budget.db
-                                     → ~/notes/Money/YYYY-MM-statement.md
+                                     → ~/notes/files/money/YYYY-MM-statement.md (if enabled)
 ```
 
 ### Module layout
@@ -27,15 +27,16 @@ config.py      — XDG config file management
 |---|---|
 | Database | `~/.local/share/gbudget/budget.db` |
 | Config | `~/.config/gbudget/config.json` |
-| Statements | `~/notes/files/money/YYYY-MM-statement.md` |
+| Statements | `~/notes/files/money/YYYY-MM-statement.md` (only if enabled) |
 
 ### Config (`~/.config/gbudget/config.json`)
 
 ```json
 {
-  "vault_path": "~/notes",
+  "vault_path": "",
   "statement_day": 1,
-  "last_statement_month": "2026-06"
+  "last_statement_month": "",
+  "statements_enabled": false
 }
 ```
 
@@ -73,13 +74,14 @@ CREATE TABLE recurring (
 
 | Command | Description |
 |---|---|
-| `init --vault PATH` | First-time setup: creates config, DB, and vault folder |
+| `init` | First-time setup: creates config and DB |
 | `add AMOUNT DESC [-c CAT] [-d DATE] [--pending]` | Add a transaction (negative amount → type=expense; positive → income). Defaults to cleared; `--pending` marks as uncleared |
 | `list [--month YYYY-MM] [-c CAT] [--status pending \| cleared]` | Tabular output of transactions |
 | `summary [--month YYYY-MM]` | Total income, expenses, net. `--by-category` for breakdown |
 | `edit ID [-a AMOUNT] [-d DESC] [-c CAT] [--type income \| expense] [--status cleared]` | Edit a transaction |
 | `delete ID` | Delete a transaction |
 | `clear ID [ID ...]` | Mark one or more transactions as cleared (reconciled) |
+| `setup-statements --vault PATH` | Enable markdown statements (creates `files/money/` dir, sets `statements_enabled`) |
 | `export [--month YYYY-MM]` | Force-regenerate the monthly statement markdown |
 | `config [--vault PATH]` | View current settings or update vault path |
 | `recurring add AMT DESC -c CAT -d DAY [--income]` | Create a recurring template |
@@ -88,13 +90,13 @@ CREATE TABLE recurring (
 
 ### Auto-prompt behavior
 
-On any command invocation, if the current month differs from `last_statement_month` (in config), two prompts fire:
+On any command invocation, if the current month differs from `last_statement_month` (in config), prompts fire:
 
 1. > Generate statement for [last month]? [y/N]
-   If yes → export for last month.
+   Only shown when `statements_enabled` is `true`. If yes → export for last month.
 
 2. > Generate recurring transactions for [this month]? [y/N]
-   If yes → create pending transactions for each due recurring template.
+   Always shown (regardless of statements). If yes → create pending transactions for each due recurring template.
    Skips any that already exist in the current month (same amount + description).
 
 Updates `last_statement_month` in config after both prompts.
@@ -129,12 +131,23 @@ tags:
 | **Closing Balance** | **£2,810.00** |
 | **Saved this month** | **£1,610.00** |
 
+## Recurring Payments
+
+| Description | Category | Amount | Due Day |
+|---|---|---|---|
+| Rent | Housing | -£500.00 | 1 |
+| Netflix | Subscriptions | -£12.00 | 15 |
+
+**Total outgoings:** -£512.00
+
 ## Transactions (Cleared)
 
 | Date | Description | Category | Amount |
 |---|---|---|---|
 | Jul 3 | Groceries | Food | -£85.00 |
 | Jul 4 | Monthly salary | Income | +£2,500.00 |
+
+**Total:** +£2,415.00
 
 ## Expenses by Category
 

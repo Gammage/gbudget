@@ -12,3 +12,7 @@ __pycache__/
 
 # pre-commit
 .pre-commit-config.yaml
+
+# notes
+test.md
+todo.md
