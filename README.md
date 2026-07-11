@@ -50,6 +50,10 @@ gbudget recurring add 12 "Netflix" -c Subscriptions -d 15
 gbudget recurring add 500 "Rent" -c Housing -d 1
 gbudget recurring list
 gbudget recurring delete 1
+gbudget debt add "Student Loan" 12000 --rate 5.5
+gbudget debt list
+gbudget debt pay 1 200
+gbudget debt delete 1
 gbudget reset
 ```
 
@@ -123,6 +127,13 @@ gbudget reset
   Delete vault statement files too? [Y/N] Y
   Statement files deleted.
   ```
+
+**`debt`**
+  Manage debts and loans. Subcommands:
+  - `debt add "Student Loan" 12000 --rate 5.5` — create a debt with annual interest rate
+  - `debt list` — show all debts with current balances
+  - `debt pay 1 200` — record a payment (prompts for transfer fee)
+  - `debt delete 1` — remove a debt and its payment history
 
 ## Workflow
 

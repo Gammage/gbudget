@@ -10,6 +10,7 @@ from exporters import export_statement
 
 def main():
     config = load_config()
+    init_db()  # ensure any new tables are created for existing databases
     check_statement_prompt(config)
 
     parser = argparse.ArgumentParser(description="gbudget — Personal CLI Budget")
